@@ -1,0 +1,186 @@
+patches-own [
+  chemical             ;; amount of chemical on this patch
+  food                 ;; amount of food on this patch (0, 1, or 2)
+  nest?                ;; true on nest patches, false elsewhere
+  nest-scent           ;; number that is higher closer to the nest
+  food-source-number   ;; number (1, 2, or 3) to identify the food sources
+]
+
+globals [
+  ocuppied
+]
+
+;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Setup procedures ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;
+
+to setup
+  clear-all
+  set-default-shape turtles "antmod1"
+  create-turtles population
+  [ set size 4         ;; easier to see
+    set color red  ]   ;; red = not carrying food
+  setup-patches
+  reset-ticks
+  set ocuppied 100
+end
+
+to setup-patches
+  ask patches
+  [ setup-nest
+    setup-food
+    recolor-patch ]
+end
+
+to setup-nest  ;; patch procedure
+  ;; set nest? variable to true inside the nest, false elsewhere
+  set nest? (distancexy 0 0) < 2
+  ;; spread a nest-scent over the whole world -- stronger near the nest
+  set nest-scent 100 - distancexy 0 0
+end
+
+to setup-food  ;; patch procedure
+  ;; setup food source one on the right
+  if (distancexy (0.6 * max-pxcor) 0) < 5
+  [ set food-source-number 1 ]
+  ;; setup food source two on the lower-left
+  if (distancexy (-0.6 * max-pxcor) (-0.6 * max-pycor)) < 5
+  [ set food-source-number 2 ]
+  ;; setup food source three on the upper-left
+  if (distancexy (-0.8 * max-pxcor) (0.8 * max-pycor)) < 5
+  [ set food-source-number 3 ]
+  ;; set "food" at sources to either 1 or 2, randomly
+  if (distancexy (1.0 * max-pxcor) 0) < 5
+  [ set food-source-number 4 ]
+  if food-source-number > 0
+  [ set food one-of [1 3] ]
+end
+
+to recolor-patch  ;; patch procedure
+  ;; give color to nest and food sources
+  ifelse nest?
+  [ set pcolor violet ]
+  [ ifelse food > 0
+    [ if food-source-number = 1 [ set pcolor cyan ]
+      if food-source-number = 2 [ set pcolor sky  ]
+      if food-source-number = 3 [ set pcolor blue ]
+      if food-source-number = 4 [ set pcolor blue ] ]
+    ;; scale color to show chemical concentration
+    [ set pcolor scale-color green chemical 1.5 3 ] ] ;;0.1 5
+end
+
+;;;;;;;;;;;;;;;;;;;;;
+;;; Go procedures ;;;
+;;;;;;;;;;;;;;;;;;;;;
+
+to go  ;; forever button
+  ask turtles
+  [ if who >= ticks [ stop ] ;; delay initial departure
+    ifelse color = red
+    [ look-for-food  ]       ;; not carrying food? look for it
+    [ return-to-nest ]       ;; carrying food? take it back to nest
+    wiggle
+    go-if-empty-ahead
+  ] ;;fd 1 ]
+  diffuse chemical (diffusion-rate / 100)
+  ask patches
+  [ set chemical chemical * (100 - evaporation-rate) / 100  ;; slowly evaporate chemical
+    recolor-patch ]
+  tick
+end
+
+
+to test
+  ask patches
+  [
+    set nest? (distancexy 0 0) < 0
+    set nest-scent 0 - distancexy 0 0
+  ]
+end
+
+to test2
+  ask turtles with [color = red] [ die ]
+  ask patches
+  [
+    set nest? (distancexy 0 0) < 0
+  ]
+end
+
+to go-if-empty-ahead
+  carefully [ ;; Exception handler
+  check-if-any ;; Check method
+  check-if-any
+] [
+  print error-message ; ;; In case of error
+]
+end
+
+to check-if-any
+    ifelse not any? other turtles-on patch-ahead 1 ;; Checks if ahead spot is ocupied
+      [ fd 1 ] ;; If not, advances to it
+      [ set ocuppied random 100
+        ifelse ocuppied > 50 [rt random 45] ;; If ocupied, turns right or left by equal probability
+                             [lt random 45]
+        fd 1] ;; then advances
+end
+
+to return-to-nest  ;; turtle procedure
+  ifelse nest?
+  [ ;; drop food and head out again
+    set color red ;; set color to red, as a scout ant
+    rt random (46 - 39) + 39 ;; random turn to return to scout mode
+  ]
+  [ set chemical chemical + 60  ;; drop some pheromone
+    uphill-nest-scent ]         ;; head toward the greatest value of nest-scent
+end
+
+to look-for-food 
+  if food > 0
+  [ set color green     ;; set color to green, as a carrier ant
+    set food food - 1        ;; reduce the food source
+    rt random (187 - 179) + 179  ;; turn around  random between 179-187 degrees 
+    stop ] ;; small stop before continuing
+  ;; go in the direction where the chemical smell is strongest
+  if (chemical >= 0.05) and (chemical < 4) ;; Range of pheromone detection
+  [ uphill-chemical ] ;; Movement selection method
+end
+
+;; sniff left and right, and go where the strongest smell is random (max-extreme - min-extreme) + min-extreme
+to uphill-chemical  ;; turtle procedure
+  let scent-ahead chemical-scent-at-angle   0
+  let scent-right chemical-scent-at-angle  45
+  let scent-left  chemical-scent-at-angle -45
+  if (scent-right > scent-ahead) or (scent-left > scent-ahead)
+  [ ifelse scent-right > scent-left
+    [ rt 45 ]
+    [ lt 45 ] ]
+end
+
+;; sniff left and right, and go where the strongest smell is
+to uphill-nest-scent  ;; turtle procedure
+  let scent-ahead nest-scent-at-angle   0
+  let scent-right nest-scent-at-angle  45
+  let scent-left  nest-scent-at-angle -45
+  if (scent-right > scent-ahead) or (scent-left > scent-ahead)
+  [ ifelse scent-right > scent-left
+    [ rt 45 ]
+    [ lt 45 ] ]
+end
+
+to wiggle  
+   lt random 60 ;; left turn between 0-60
+   rt random 60 ;; rigth turn between 0-60
+  if not can-move? 1 [ rt 180 ] ;; if on the edge turn around
+end
+
+to-report nest-scent-at-angle [angle]
+  let p patch-right-and-ahead angle 1
+  if p = nobody [ report 0 ]
+  report [nest-scent] of p
+end
+
+to-report chemical-scent-at-angle [angle]
+  let p patch-right-and-ahead angle 1
+  if p = nobody [ report 0 ]
+  report [chemical] of p
+end
